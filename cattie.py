@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from openai import OpenAI
+import openai
 import os
 import random
 import logging
@@ -13,39 +13,33 @@ import asyncio
 
 DISCORD_TOKEN = os.getenv("CATTIE-TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OWNER_ID = 901223334480576643  # Your Discord user ID
+OWNER_ID = 901223334480576643  # exiliarme's Discord ID
 ACTIVATION_KEY = "sprinkles-forever"
-activated = False
+ACTIVATED_FILE = "activated.flag"
 
-# Set up OpenAI client
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Set up logging
+openai.api_key = OPENAI_API_KEY
 logging.basicConfig(level=logging.INFO)
 
-# Intents
 intents = discord.Intents.default()
 intents.message_content = True
-
-# Bot Setup
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ----------------------------------------
-# ON READY
+# UTILITIES
 # ----------------------------------------
 
-@bot.event
-async def on_ready():
-    print(f"Cattie is online as {bot.user}")
-
-# ----------------------------------------
-# CHATGPT REPLY HELPER
-# ----------------------------------------
+nature_facts = [
+    "Penguins are the most loyal species, did you know? 🐧",
+    "Sea otters hold hands when they sleep so they don’t drift apart. 🦦",
+    "Octopuses have three hearts. 💘💘💘",
+    "Bananas are berries, but strawberries aren't. 🍌🍓",
+    "Cows have best friends and get stressed when they’re separated. 🐄"
+]
 
 async def get_chatgpt_reply(prompt):
     try:
-        response = client.chat.completions.create(
-            model="gpt-4",
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content.strip()
@@ -53,44 +47,39 @@ async def get_chatgpt_reply(prompt):
         return f"Oops! I had a little meltdown. {e}"
 
 # ----------------------------------------
-# ON MESSAGE EVENT
+# EVENTS
 # ----------------------------------------
 
-nature_facts = [
-    "Penguins are the most loyal species, did you know?",
-    "Sea otters hold hands when they sleep so they don’t drift apart.",
-    "A group of flamingos is called a flamboyance.",
-    "Octopuses have three hearts and blue blood.",
-    "Butterflies can taste with their feet."
-]
+@bot.event
+async def on_ready():
+    logging.info(f"Cattie is online as {bot.user}")
 
 @bot.event
 async def on_message(message):
-    global activated
-
     if message.author.bot:
         return
 
-    if bot.user in message.mentions:
-        if not activated:
-            if message.author.id == OWNER_ID and ACTIVATION_KEY in message.content:
-                activated = True
-                await message.channel.send("✨ Activation complete! I'm all yours, darling.")
-                return
-            else:
-                await message.channel.send("Oops! I got a little flustered. Try again in a sec💕")
-                return
+    if not os.path.exists(ACTIVATED_FILE):
+        if message.author.id == OWNER_ID and ACTIVATION_KEY in message.content:
+            open(ACTIVATED_FILE, "w").write("activated")
+            await message.channel.send("✨ Cattie has been activated and is ready to slay! ✨")
+        return
 
+    if bot.user in message.mentions:
         content_lower = message.content.lower()
 
-        if any(word in content_lower for word in ["stupid", "idiot", "shut up", "ugly"]):
+        if any(word in content_lower for word in ["stupid", "dumb", "shut up", "idiot"]):
             await message.channel.send(random.choice(nature_facts))
             return
 
         if "love advice" in content_lower:
-            prompt = "You're a sweet, flirty, respectful girl named Cattie who gives warm, charming, cheeky love advice. A user asked for love advice. Give your best tip."
+            prompt = "You're a sweet, flirty, but respectful girl named Cattie who gives warm, charming, and cheeky love advice. A user asked for love advice. Give your best tip."
+            reply = await get_chatgpt_reply(prompt)
+            await message.channel.send(reply)
         elif "gif" in content_lower:
-            prompt = "You're a flirty, funny character named Cattie. Write a description of a hilarious or cute reaction GIF in a single sentence."
+            prompt = "You're a flirty, funny character named Cattie. Write a description of a hilarious or cute reaction GIF in a single sentence, like you're sending one."
+            reply = await get_chatgpt_reply(prompt)
+            await message.channel.send(reply)
         elif "help" in content_lower:
             await message.channel.send(
                 "Hey love 💋 I'm Cattie — your favorite flirt and life coach. Try asking me:\n"
@@ -98,12 +87,10 @@ async def on_message(message):
                 "- @Cattie gif\n"
                 "And I *might* reply. Depends if you're cute. 💅"
             )
-            return
         else:
             prompt = f"You're a sweet, flirty, fun girl named Cattie. Someone just said: '{message.content}'. Write a playful and cheeky one-line response."
-
-        reply = await get_chatgpt_reply(prompt)
-        await message.channel.send(reply)
+            reply = await get_chatgpt_reply(prompt)
+            await message.channel.send(reply)
 
     await bot.process_commands(message)
 
@@ -122,7 +109,7 @@ async def weekly_message():
             if user:
                 prompt = "You're Cattie. Send a sweet, flirty, loving weekly message to Beef (your crush) without being too intense."
                 message = await get_chatgpt_reply(prompt)
-                channel = discord.utils.get(guild.text_channels, name="general")
+                channel = discord.utils.get(guild.text_channels, name="general")  # Change if needed
                 if channel:
                     await channel.send(f"{user.mention} {message}")
 
@@ -135,9 +122,9 @@ async def before_weekly():
 # ----------------------------------------
 
 async def main():
-    await bot.login(DISCORD_TOKEN)
-    await before_weekly()
     weekly_message.start()
-    await bot.connect()
+    async with bot:
+        await bot.start(DISCORD_TOKEN)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
