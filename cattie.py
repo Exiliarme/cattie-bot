@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import openai
+from openai import OpenAI
 import os
 import random
 import logging
@@ -13,18 +13,22 @@ import asyncio
 
 DISCORD_TOKEN = os.getenv("CATTIE-TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OWNER_ID = 901223334480576643  # exiliarme
+OWNER_ID = 901223334480576643  # Your Discord user ID
 ACTIVATION_KEY = "sprinkles-forever"
+activated = False
 
-openai.api_key = OPENAI_API_KEY
+# Set up OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
 
+# Set up logging
 logging.basicConfig(level=logging.INFO)
 
+# Intents
 intents = discord.Intents.default()
 intents.message_content = True
 
+# Bot Setup
 bot = commands.Bot(command_prefix="!", intents=intents)
-activated = False
 
 # ----------------------------------------
 # ON READY
@@ -32,7 +36,7 @@ activated = False
 
 @bot.event
 async def on_ready():
-    logging.info(f"Cattie is online as {bot.user}")
+    print(f"Cattie is online as {bot.user}")
 
 # ----------------------------------------
 # CHATGPT REPLY HELPER
@@ -40,17 +44,25 @@ async def on_ready():
 
 async def get_chatgpt_reply(prompt):
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = client.chat.completions.create(
+            model="gpt-4",
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Oops! I had a little meltdown.\n\n{e}"
+        return f"Oops! I had a little meltdown. {e}"
 
 # ----------------------------------------
-# AUTO-RESPONSE TO MENTIONS
+# ON MESSAGE EVENT
 # ----------------------------------------
+
+nature_facts = [
+    "Penguins are the most loyal species, did you know?",
+    "Sea otters hold hands when they sleep so they don’t drift apart.",
+    "A group of flamingos is called a flamboyance.",
+    "Octopuses have three hearts and blue blood.",
+    "Butterflies can taste with their feet."
+]
 
 @bot.event
 async def on_message(message):
@@ -60,26 +72,25 @@ async def on_message(message):
         return
 
     if bot.user in message.mentions:
-        content_lower = message.content.lower()
-
         if not activated:
-            if message.author.id == OWNER_ID and ACTIVATION_KEY in content_lower:
+            if message.author.id == OWNER_ID and ACTIVATION_KEY in message.content:
                 activated = True
-                await message.channel.send("✨ Cattie has been activated. Let's get flirty. 💅")
+                await message.channel.send("✨ Activation complete! I'm all yours, darling.")
+                return
             else:
                 await message.channel.send("Oops! I got a little flustered. Try again in a sec💕")
+                return
+
+        content_lower = message.content.lower()
+
+        if any(word in content_lower for word in ["stupid", "idiot", "shut up", "ugly"]):
+            await message.channel.send(random.choice(nature_facts))
             return
 
         if "love advice" in content_lower:
-            prompt = "You're a sweet, flirty, respectful girl named Cattie who gives warm, cheeky love advice. A user asked for love advice. Give your best tip."
-            reply = await get_chatgpt_reply(prompt)
-            await message.channel.send(reply)
-
+            prompt = "You're a sweet, flirty, respectful girl named Cattie who gives warm, charming, cheeky love advice. A user asked for love advice. Give your best tip."
         elif "gif" in content_lower:
             prompt = "You're a flirty, funny character named Cattie. Write a description of a hilarious or cute reaction GIF in a single sentence."
-            reply = await get_chatgpt_reply(prompt)
-            await message.channel.send(reply)
-
         elif "help" in content_lower:
             await message.channel.send(
                 "Hey love 💋 I'm Cattie — your favorite flirt and life coach. Try asking me:\n"
@@ -87,10 +98,12 @@ async def on_message(message):
                 "- @Cattie gif\n"
                 "And I *might* reply. Depends if you're cute. 💅"
             )
+            return
         else:
             prompt = f"You're a sweet, flirty, fun girl named Cattie. Someone just said: '{message.content}'. Write a playful and cheeky one-line response."
-            reply = await get_chatgpt_reply(prompt)
-            await message.channel.send(reply)
+
+        reply = await get_chatgpt_reply(prompt)
+        await message.channel.send(reply)
 
     await bot.process_commands(message)
 
@@ -102,7 +115,7 @@ async def on_message(message):
 async def weekly_message():
     from datetime import datetime
     today = datetime.utcnow().weekday()
-    if today == 2:
+    if today == 2:  # Wednesday
         guild = discord.utils.get(bot.guilds)
         if guild:
             user = guild.get_member(480787863936565261)
@@ -122,7 +135,9 @@ async def before_weekly():
 # ----------------------------------------
 
 async def main():
+    await bot.login(DISCORD_TOKEN)
+    await before_weekly()
     weekly_message.start()
-    await bot.start(DISCORD_TOKEN)
+    await bot.connect()
 
 asyncio.run(main())
